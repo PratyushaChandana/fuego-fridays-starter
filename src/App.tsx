@@ -1,227 +1,233 @@
 import { useState } from "react";
+import { CheckCircle2, Circle, Clock, Flame, Zap } from "lucide-react";
+import { motion } from "framer-motion";
 
-import { ArrowUpRight, Check, Copy } from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
+import { FocusPal } from "@/components/FocusPal";
+import { useIdleDetector } from "@/hooks/useIdleDetector";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { mockTasks, type Task } from "@/data/mock-tasks";
 
-/** Copy-and-paste starter prompts for Kiro's chat. */
-const PROMPTS = [
-  "What is humorphism? Show me a few patterns I could build.",
-  "What's already in this project that I can build with?",
-  "What do you already know about this workshop?",
-  "I do ___ at work. Suggest a humorphic pattern and build a first version.",
-  "Build the 'Just Need Your Input' pattern for ___.",
-  "Replace this landing page with a chat screen that uses the mock data.",
-];
+/* ─── Dev-mode idle simulator ───────────────────────────────────────────── */
+// Setting this to true adds a small debug bar that lets you fast-forward
+// the idle clock by manipulating the last-activity timestamp directly via
+// synthetic DOM events — useful for demoing without waiting 2+ minutes.
+const DEV_MODE = true;
 
-/**
- * Fuego Fridays — starter landing / launch pad.
- *
- * This is intentionally NOT a demo of humorphism. When the app boots, the goal
- * of this screen is simple: confirm the environment works, show what's in the
- * box to build with, and push you into Kiro to start. Pick a pattern from
- * humorphism.com, pick your own work domain, and build it here.
- *
- * The shadcn/ui components (including the chat kit) live in src/components/ui
- * ready to import. Mock data is in src/data. Replace this screen with your build.
- */
+/* ─── Priority badge ────────────────────────────────────────────────────── */
+const PRIORITY_STYLES: Record<Task["priority"], string> = {
+  urgent: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  high:   "bg-fuego-100 text-fuego-700 dark:bg-fuego-900/30 dark:text-fuego-400",
+  medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  low:    "bg-secondary text-muted-foreground",
+};
 
-export default function App() {
+const STATUS_STYLES: Record<Task["status"], string> = {
+  in_progress: "text-fuego-600",
+  todo:        "text-muted-foreground",
+  blocked:     "text-red-500",
+  done:        "text-green-600",
+};
+
+function TaskCard({
+  task,
+  onToggle,
+}: {
+  task: Task;
+  onToggle: (id: string) => void;
+}) {
+  const done = task.status === "done";
   return (
-    <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      {/* Masthead — full-bleed, pinned to the window edges */}
-      <header className="border-b border-border/60">
-        <div className="mx-auto grid w-full max-w-7xl grid-cols-3 items-center px-6 py-5 sm:px-8">
-          <div className="flex items-center gap-3 justify-self-start">
-            <span className="font-display text-lg font-semibold tracking-tight sm:text-xl">
-              Fuego Fridays
-            </span>
-            <Badge
-              variant="outline"
-              className="rounded-full border-border text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
-            >
-              starter
-            </Badge>
-          </div>
-          <span className="hidden items-center gap-1.5 justify-self-center whitespace-nowrap rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground md:inline-flex">
-            <Check className="h-3.5 w-3.5 text-fuego-500" />
-            You&rsquo;re live &middot; localhost is running
-          </span>
-          <a
-            href="https://humorphism.com"
-            target="_blank"
-            rel="noreferrer"
-            className="justify-self-end text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+    <motion.div
+      layout
+      className={cn(
+        "group flex items-start gap-3 rounded-xl border border-border bg-card p-4 shadow-xs",
+        "transition-opacity",
+        done && "opacity-50"
+      )}
+    >
+      <button
+        onClick={() => onToggle(task.id)}
+        className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-fuego-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={done ? "Mark incomplete" : "Mark complete"}
+      >
+        {done ? (
+          <CheckCircle2 className="size-5 text-green-500" />
+        ) : (
+          <Circle className="size-5" />
+        )}
+      </button>
+
+      <div className="min-w-0 flex-1">
+        <p
+          className={cn(
+            "text-sm font-medium leading-snug",
+            done && "line-through text-muted-foreground"
+          )}
+        >
+          {task.title}
+        </p>
+        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+          {task.description}
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+              PRIORITY_STYLES[task.priority]
+            )}
           >
-            humorphism.com
-          </a>
+            {task.priority}
+          </span>
+          {task.aiSuggested && (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-fuego-50 px-2 py-0.5 text-[11px] font-medium text-fuego-600 dark:bg-fuego-900/20">
+              <Zap className="size-2.5" />
+              AI pick
+            </span>
+          )}
+          <span className={cn("ml-auto text-[11px] font-medium", STATUS_STYLES[task.status])}>
+            {task.status.replace("_", " ")}
+          </span>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ─── Idle status pill (visible in dev mode) ─────────────────────────────── */
+function IdleStatusPill() {
+  const { idleState, idleMs, resetIdle } = useIdleDetector();
+
+  const LABEL: Record<typeof idleState, string> = {
+    active:      "● active",
+    "idle-soon": "◑ idle soon",
+    idle:        "○ idle",
+    "long-idle": "◌ long idle",
+  };
+
+  const COLORS: Record<typeof idleState, string> = {
+    active:      "bg-green-100 text-green-700",
+    "idle-soon": "bg-amber-100 text-amber-700",
+    idle:        "bg-fuego-100 text-fuego-700",
+    "long-idle": "bg-red-100 text-red-700",
+  };
+
+  const secs = Math.floor(idleMs / 1000);
+
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className={cn(
+          "rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums",
+          COLORS[idleState]
+        )}
+      >
+        {LABEL[idleState]} — {secs}s
+      </span>
+      <Button size="xs" variant="outline" onClick={resetIdle}>
+        reset
+      </Button>
+    </div>
+  );
+}
+
+/* ─── Main app ──────────────────────────────────────────────────────────── */
+export default function App() {
+  const [tasks, setTasks] = useState<Task[]>(mockTasks);
+
+  function toggleTask(id: string) {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? { ...t, status: t.status === "done" ? "todo" : "done" }
+          : t
+      )
+    );
+  }
+
+  const activeTasks  = tasks.filter((t) => t.status !== "done");
+  const doneTasks    = tasks.filter((t) => t.status === "done");
+
+  return (
+    <div className="flex h-dvh flex-col bg-background text-foreground">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <header className="shrink-0 border-b border-border/60 bg-card px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-2xl items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 items-center justify-center rounded-full bg-fuego-500 shadow-sm">
+              <Flame className="size-4 text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold leading-tight">Focus Pal</p>
+              <p className="text-xs text-muted-foreground">
+                your proactive teammate
+              </p>
+            </div>
+          </div>
+
+          {/* Dev-mode idle indicator */}
+          {DEV_MODE && <IdleStatusPill />}
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl flex-1 px-6 pb-24 sm:px-8">
-        {/* Hero — full-width rounded white panel */}
-        <section className="mt-8 w-full rounded-3xl border border-border/60 bg-card p-8 shadow-sm sm:mt-12 sm:p-12 lg:p-16">
-          <h1 className="max-w-4xl font-display text-5xl font-bold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
-            Build a front-end for an AI teammate.
-          </h1>
+      {/* ── Task list ──────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+        <div className="mx-auto max-w-2xl space-y-6">
 
-          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-foreground sm:text-xl">
-            Pick one humorphic pattern. Build it into an experience that&rsquo;s
-            relevant to you, personally or at work.
-          </p>
+          {/* Active tasks */}
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Up next
+              </h2>
+              <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                {activeTasks.length} tasks
+              </span>
+            </div>
+            <div className="space-y-2">
+              {activeTasks.map((task) => (
+                <TaskCard key={task.id} task={task} onToggle={toggleTask} />
+              ))}
+            </div>
+          </section>
 
-          <div className="mt-7 flex flex-wrap gap-3">
-            <a
-              href="https://humorphism.com/foundations/notice"
-              target="_blank"
-              rel="noreferrer"
-              className={cn(
-                "bg-thermal inline-flex items-center gap-1.5 rounded-md px-4 py-2.5",
-                "text-sm font-bold text-white shadow-sm",
-                "transition-all hover:-translate-y-0.5 hover:brightness-105",
-              )}
-            >
-              Browse humorphic patterns
-              <ArrowUpRight className="h-4 w-4" />
-            </a>
-            <span className="inline-flex items-center rounded-md border border-border px-4 py-2.5 text-sm text-muted-foreground">
-              The pattern is the constraint. The domain is yours.
-            </span>
-          </div>
-        </section>
+          {/* Completed tasks */}
+          {doneTasks.length > 0 && (
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Done
+                </h2>
+                <CheckCircle2 className="size-3.5 text-green-500" />
+              </div>
+              <div className="space-y-2">
+                {doneTasks.map((task) => (
+                  <TaskCard key={task.id} task={task} onToggle={toggleTask} />
+                ))}
+              </div>
+            </section>
+          )}
 
-        {/* Start with Kiro — the page's one job: get you into the chat.
-            Horizontal padding matches the hero card so this content aligns
-            with the hero text above. */}
-        <section className="mt-20 px-8 sm:px-12 lg:px-16">
-          <SectionLabel>Start with Kiro</SectionLabel>
-          <p className="mt-4 text-lg leading-relaxed text-foreground sm:text-xl">
-            In your Kiro IDE, everything you need to start building is already
-            set up. This page, the localhost preview you&rsquo;re looking at now,
-            is what you&rsquo;ll change, and Kiro can help you do it. Open
-            Kiro&rsquo;s chat (<Kbd>⌘</Kbd>
-            <Kbd>L</Kbd> on Mac, <Kbd>Ctrl</Kbd>
-            <Kbd>L</Kbd> on Windows), tap a prompt to copy it, and paste it in.
-          </p>
-
-          <div className="mt-14">
-            <PromptGroup
-              label="Suggested prompts to get started"
-              prompts={PROMPTS}
-            />
-          </div>
-        </section>
-
-        {/* Vision tip */}
-        <section className="mt-10 px-8 sm:px-12 lg:px-16">
-          <div className="rounded-lg border border-fuego-500/25 bg-fuego-500/[0.05] p-5">
-            <p className="font-display text-lg font-semibold">
-              Show Kiro what you mean. Give it your eyes
-            </p>
-            <p className="mt-2 text-base leading-relaxed text-muted-foreground">
-              Kiro&rsquo;s chat accepts images, so you can show it instead of
-              describing it. Paste or drag in a screenshot and say &ldquo;build
-              this.&rdquo; It works just as well for changes: screenshot what
-              Kiro builds on your localhost, point out what&rsquo;s off, and tell
-              it what to fix. A picture is faster than words for a UI.
-            </p>
-          </div>
-        </section>
-
+          {/* Bottom padding so the pal doesn't cover the last card */}
+          <div className="h-24" />
+        </div>
       </main>
 
-      {/* Footer — full-bleed, pinned to the bottom edge */}
-      <footer className="mt-16 border-t border-border/60">
-        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2 px-6 py-6 text-xs text-muted-foreground sm:px-8">
-          <span>React 19 · TypeScript · Vite · Tailwind · shadcn/ui</span>
-          <span>No backend. Mock everything. The UX is the deliverable.</span>
+      {/* ── Dev-mode idle hint ──────────────────────────────────────────── */}
+      {DEV_MODE && (
+        <div className="shrink-0 border-t border-border/40 bg-secondary/40 px-4 py-2">
+          <p className="mx-auto flex max-w-2xl items-center gap-1.5 text-[11px] text-muted-foreground">
+            <Clock className="size-3 shrink-0" />
+            <span>
+              Dev mode — thresholds: idle-soon&nbsp;45s · idle&nbsp;2min · long-idle&nbsp;5min.
+              Stop moving your mouse/keyboard to trigger the pal.
+            </span>
+          </p>
         </div>
-      </footer>
+      )}
+
+      {/* ── Focus Pal overlay — autonomous, no props needed ─────────────── */}
+      <FocusPal />
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-      {children}
-    </h2>
-  );
-}
-
-function PromptGroup({
-  label,
-  prompts,
-}: {
-  label: string;
-  prompts: string[];
-}) {
-  return (
-    <div>
-      <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </h3>
-      <ul className="mt-3 divide-y divide-border border-y border-border">
-        {prompts.map((prompt) => (
-          <PromptRow key={prompt} text={prompt} />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/** A single tappable prompt row that copies its text to the clipboard. */
-function PromptRow({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      // Clipboard access can be blocked; fail quietly.
-    }
-  }
-
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="group flex w-full items-center justify-between gap-4 py-3.5 text-left"
-        aria-label={`Copy prompt: ${text}`}
-      >
-        <span className="text-lg leading-relaxed text-foreground sm:text-xl">
-          {text}
-        </span>
-        <span
-          className={cn(
-            "flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors",
-            copied
-              ? "text-fuego-600"
-              : "text-muted-foreground group-hover:text-foreground",
-          )}
-        >
-          {copied ? (
-            <Check className="h-3.5 w-3.5" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" />
-          )}
-          {copied ? "Copied" : "Copy"}
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded border border-border bg-secondary px-1 font-sans text-[11px] font-medium text-muted-foreground">
-      {children}
-    </kbd>
   );
 }
