@@ -1,26 +1,14 @@
 /**
  * Mock task/todo items — a generic work backlog.
  *
- * Use this if your domain is task management, a to-do app, a sprint board,
- * a "Now's A Great Time To..." backlog surface, etc. All data is fake and
- * lives entirely in the front end.
+ * Type definitions live in @/types to avoid duplication. This file owns
+ * only the seed data and re-exports the types for convenience so existing
+ * import sites that reference "@/data/mock-tasks" continue to work.
  */
 
-export type TaskStatus = "todo" | "in_progress" | "blocked" | "done";
-export type TaskPriority = "low" | "medium" | "high" | "urgent";
+export type { Task, TaskStatus, TaskPriority } from "@/types";
 
-export interface Task {
-  id: string;
-  title: string;
-  description: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  assignee: string;
-  dueDate: string; // ISO date
-  tags: string[];
-  /** Set by the "agent" in some patterns — flags a task the AI noticed. */
-  aiSuggested?: boolean;
-}
+import type { Task } from "@/types";
 
 export const mockTasks: Task[] = [
   {
@@ -33,6 +21,7 @@ export const mockTasks: Task[] = [
     assignee: "You",
     dueDate: "2026-07-09",
     tags: ["writing", "launch"],
+    createdAt: "2026-07-01T09:00:00.000Z",
   },
   {
     id: "task-2",
@@ -44,6 +33,7 @@ export const mockTasks: Task[] = [
     assignee: "You",
     dueDate: "2026-07-07",
     tags: ["code-review", "blocking-someone"],
+    createdAt: "2026-07-02T10:30:00.000Z",
   },
   {
     id: "task-3",
@@ -55,6 +45,7 @@ export const mockTasks: Task[] = [
     assignee: "You",
     dueDate: "2026-07-11",
     tags: ["data", "investigate"],
+    createdAt: "2026-07-03T08:15:00.000Z",
   },
   {
     id: "task-4",
@@ -65,6 +56,7 @@ export const mockTasks: Task[] = [
     assignee: "You",
     dueDate: "2026-07-08",
     tags: ["planning"],
+    createdAt: "2026-07-04T11:00:00.000Z",
   },
   {
     id: "task-5",
@@ -76,6 +68,7 @@ export const mockTasks: Task[] = [
     assignee: "You",
     dueDate: "2026-07-10",
     tags: ["docs", "onboarding"],
+    createdAt: "2026-07-04T14:00:00.000Z",
   },
   {
     id: "task-6",
@@ -88,6 +81,7 @@ export const mockTasks: Task[] = [
     dueDate: "2026-07-15",
     tags: ["infra", "cleanup"],
     aiSuggested: true,
+    createdAt: "2026-07-05T09:00:00.000Z",
   },
   {
     id: "task-7",
@@ -99,6 +93,7 @@ export const mockTasks: Task[] = [
     assignee: "You",
     dueDate: "2026-07-07",
     tags: ["support", "escalation"],
+    createdAt: "2026-07-06T08:00:00.000Z",
   },
   {
     id: "task-8",
@@ -109,5 +104,7 @@ export const mockTasks: Task[] = [
     assignee: "You",
     dueDate: "2026-07-06",
     tags: ["team"],
+    createdAt: "2026-07-01T12:00:00.000Z",
+    completedAt: "2026-07-06T15:30:00.000Z",
   },
 ];

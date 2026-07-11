@@ -1,87 +1,95 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { IdleState } from "@/types";
+import {
+  classifyIdleMs,
+  ACTIVITY_EVENTS,
+  DEFAULT_THRESHOLDS,
+} from "@/services/idleService";
+import type { IdleThresholds } from "@/services/idleService";
 
-export type IdleState = "active" | "idle-soon" | "idle" | "long-idle";
+// Re-export so existing imports of IdleThresholds from this file keep working.
+export type { IdleThresholds } from "@/services/idleService";
 
-/**
- * Thresholds (ms) that gate each idle state transition.
- * - idle-soon  → warn the user a break might be coming (gentle nudge)
- * - idle       → pop up the pal with a check-in message
- * - long-idle  → escalate — are they still there at all?
- */
-const THRESHOLDS = {
-  "idle-soon": 45_000,   // 45 s  — gentle warning
-  idle: 120_000,         // 2 min — pal pops up
-  "long-idle": 300_000,  // 5 min — deeper check-in
-} as const;
-
-function classify(ms: number): IdleState {
-  if (ms >= THRESHOLDS["long-idle"]) return "long-idle";
-  if (ms >= THRESHOLDS.idle) return "idle";
-  if (ms >= THRESHOLDS["idle-soon"]) return "idle-soon";
-  return "active";
+export interface UseIdleDetectorOptions {
+  /** Override any or all thresholds in ms */
+  thresholds?: Partial<IdleThresholds>;
+  /** Called every time the idle state transitions */
+  onStateChange?: (next: IdleState, prev: IdleState) => void;
 }
 
 export interface UseIdleDetectorReturn {
   idleState: IdleState;
   idleMs: number;
-  /** Call this to manually reset the idle clock (e.g. after the pal is dismissed). */
+  thresholds: IdleThresholds;
   resetIdle: () => void;
 }
 
 /**
- * Monitors window-level mouse/keyboard/scroll/touch events to determine how
- * long the user has been idle. Updates every second while idle; pauses the
- * interval while the user is active to keep CPU overhead minimal.
+ * Monitors window-level input events to determine how long the user has
+ * been idle, transitioning through four states:
+ *   active → idle-soon → idle → long-idle
+ *
+ * Classification and event constants live in @/services/idleService so they
+ * can be tested and reused independently of React.
  */
-export function useIdleDetector(): UseIdleDetectorReturn {
+export function useIdleDetector(
+  options: UseIdleDetectorOptions = {}
+): UseIdleDetectorReturn {
+  const thresholds: IdleThresholds = {
+    ...DEFAULT_THRESHOLDS,
+    ...options.thresholds,
+  };
+
   const lastActivityRef = useRef<number>(Date.now());
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [idleMs, setIdleMs] = useState(0);
+  const intervalRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevStateRef    = useRef<IdleState>("active");
+
+  const [idleMs, setIdleMs]       = useState(0);
   const [idleState, setIdleState] = useState<IdleState>("active");
+
+  const onStateChangeCb = useRef(options.onStateChange);
+  useEffect(() => {
+    onStateChangeCb.current = options.onStateChange;
+  }, [options.onStateChange]);
 
   const resetIdle = useCallback(() => {
     lastActivityRef.current = Date.now();
     setIdleMs(0);
     setIdleState("active");
+    prevStateRef.current = "active";
   }, []);
 
-  // Record activity; the tick interval catches up on the next poll.
   const onActivity = useCallback(() => {
     lastActivityRef.current = Date.now();
   }, []);
 
-  // Tick every second to recalculate elapsed idle time.
   const startTick = useCallback(() => {
     if (intervalRef.current) return;
     intervalRef.current = setInterval(() => {
       const elapsed = Date.now() - lastActivityRef.current;
-      const next = classify(elapsed);
+      const next = classifyIdleMs(elapsed, thresholds);
       setIdleMs(elapsed);
-      setIdleState(next);
+      setIdleState((prev) => {
+        if (prev !== next) {
+          onStateChangeCb.current?.(next, prev);
+          prevStateRef.current = prev;
+        }
+        return next;
+      });
     }, 1_000);
+  // thresholds deliberately excluded — tick captures the snapshot at mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    const EVENTS = [
-      "mousemove",
-      "mousedown",
-      "keydown",
-      "keyup",
-      "scroll",
-      "touchstart",
-      "touchmove",
-      "wheel",
-      "focus",
-      "click",
-    ] as const;
-
     const handler = () => onActivity();
-
-    EVENTS.forEach((ev) => window.addEventListener(ev, handler, { passive: true }));
+    ACTIVITY_EVENTS.forEach((ev) =>
+      window.addEventListener(ev, handler, { passive: true })
+    );
     startTick();
 
     return () => {
-      EVENTS.forEach((ev) => window.removeEventListener(ev, handler));
+      ACTIVITY_EVENTS.forEach((ev) => window.removeEventListener(ev, handler));
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
@@ -89,5 +97,5 @@ export function useIdleDetector(): UseIdleDetectorReturn {
     };
   }, [onActivity, startTick]);
 
-  return { idleState, idleMs, resetIdle };
+  return { idleState, idleMs, thresholds, resetIdle };
 }

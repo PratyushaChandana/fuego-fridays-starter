@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useIdleDetector, type IdleState } from "@/hooks/useIdleDetector";
+import { useIdleDetector } from "@/hooks/useIdleDetector";
+import type { IdleState, PalLine } from "@/types";
 import {
   pickLine,
   pickReturnGreeting,
   replyFollowUps,
-  type PalLine,
 } from "@/data/focusPalDialogue";
 import { FocusPalCharacter } from "@/components/FocusPalCharacter";
 import { SpeechBubble, TypingBubble } from "@/components/SpeechBubble";
@@ -25,8 +25,6 @@ type PalPhase =
 
 const TYPING_DELAY_MS = 1_100;
 const RETURN_GREET_DURATION_MS = 3_500;
-// How long to let party mode run before auto-advancing to the idle check-in.
-// "5 more mins" snoozes by resetting this timer.
 const PARTY_AUTO_ADVANCE_MS = 30_000;
 
 export function FocusPal() {
@@ -62,11 +60,9 @@ export function FocusPal() {
     }, TYPING_DELAY_MS);
   }, []);
 
-  /* ── Schedule auto-advance out of party mode ────────────────────────── */
   const schedulePartyAdvance = useCallback(() => {
     if (partyTimerRef.current) clearTimeout(partyTimerRef.current);
     partyTimerRef.current = setTimeout(() => {
-      // Time's up — deliver the idle check-in message
       const line = pickLine("idle");
       if (line) deliverLine(line);
     }, PARTY_AUTO_ADVANCE_MS);
@@ -78,11 +74,9 @@ export function FocusPal() {
     const prev = prevIdleStateRef.current;
     prevIdleStateRef.current = idleState;
 
-    // ── User returned (any idle → active) ─────────────────────────────────
     if (idleState === "active" && prev !== "active") {
       clearTimers();
       triggeredStateRef.current = null;
-
       if (
         phase === "party" ||
         phase === "speaking" ||
@@ -103,11 +97,7 @@ export function FocusPal() {
       return;
     }
 
-    // ── 45 s — enter PARTY mode ────────────────────────────────────────────
-    if (
-      idleState === "idle-soon" &&
-      triggeredStateRef.current !== "idle-soon"
-    ) {
+    if (idleState === "idle-soon" && triggeredStateRef.current !== "idle-soon") {
       triggeredStateRef.current = "idle-soon";
       clearTimers();
       setPhase("party");
@@ -115,7 +105,6 @@ export function FocusPal() {
       return;
     }
 
-    // ── 2 min — deliver idle check-in (if party was already dismissed) ─────
     if (
       idleState === "idle" &&
       triggeredStateRef.current !== "idle" &&
@@ -128,11 +117,7 @@ export function FocusPal() {
       return;
     }
 
-    // ── 5 min — long-idle escalation ───────────────────────────────────────
-    if (
-      idleState === "long-idle" &&
-      triggeredStateRef.current !== "long-idle"
-    ) {
+    if (idleState === "long-idle" && triggeredStateRef.current !== "long-idle") {
       triggeredStateRef.current = "long-idle";
       clearTimers();
       const line = pickLine("long-idle");
@@ -141,10 +126,9 @@ export function FocusPal() {
     }
   }, [idleState, phase, clearTimers, deliverLine, schedulePartyAdvance]);
 
-  /* ── Cleanup on unmount ─────────────────────────────────────────────── */
   useEffect(() => () => clearTimers(), [clearTimers]);
 
-  /* ── Party mode button handlers ─────────────────────────────────────── */
+  /* ── Party mode handlers ─────────────────────────────────────────────── */
 
   const handleGetBackToWork = useCallback(() => {
     clearTimers();
@@ -155,12 +139,11 @@ export function FocusPal() {
   }, [clearTimers, resetIdle]);
 
   const handleKeepPartying = useCallback(() => {
-    // Snooze: stay in party phase but reset the auto-advance timer
     if (partyTimerRef.current) clearTimeout(partyTimerRef.current);
     schedulePartyAdvance();
   }, [schedulePartyAdvance]);
 
-  /* ── Regular bubble handlers ────────────────────────────────────────── */
+  /* ── Bubble handlers ─────────────────────────────────────────────────── */
 
   const handleDismiss = useCallback(() => {
     clearTimers();
@@ -206,22 +189,18 @@ export function FocusPal() {
   /* ── Derived render values ─────────────────────────────────────────── */
 
   const characterVisible = phase !== "hidden" && phase !== "party";
-  const bubbleVisible = phase === "speaking" || phase === "reply-shown" || phase === "returning";
+  const bubbleVisible =
+    phase === "speaking" || phase === "reply-shown" || phase === "returning";
   const typingVisible = phase === "typing" || phase === "reply-typing";
   const mood = currentLine?.mood ?? "curious";
 
-  /* ── Render ─────────────────────────────────────────────────────────── */
-
   return (
     <>
-      {/* Full-screen party overlay — triggered at 45 s */}
       <PartyMode
         visible={phase === "party"}
         onGetBackToWork={handleGetBackToWork}
         onKeepPartying={handleKeepPartying}
       />
-
-      {/* Regular pal overlay (hidden during party phase) */}
       <SpeechBubble
         line={currentLine}
         visible={bubbleVisible}

@@ -1,5 +1,3 @@
-import type { IdleState } from "@/hooks/useIdleDetector";
-
 /**
  * Dialogue library for Focus Pal.
  *
@@ -7,17 +5,14 @@ import type { IdleState } from "@/hooks/useIdleDetector";
  * pushy. Short sentences. Lots of "we" framing. Occasional emoji. Never
  * condescending. The pal notices, aligns, and coaches — it doesn't nag.
  *
- * Each state bucket has multiple lines so the pal feels alive rather than
- * scripted. Pick one at random each time the pal surfaces.
+ * Types (PalLine, IdleState) live in @/types — imported from there so this
+ * file has no dependency on any hook.
  */
 
-export interface PalLine {
-  text: string;
-  /** Optional quick-reply labels the user can tap to dismiss or redirect. */
-  replies?: string[];
-  /** Emoji displayed on the character face for this line. */
-  mood: "curious" | "excited" | "sleepy" | "worried" | "happy";
-}
+import type { IdleState, PalLine } from "@/types";
+
+// Re-export PalLine so existing imports from "@/data/focusPalDialogue" keep working.
+export type { PalLine } from "@/types";
 
 const dialogue: Record<IdleState, PalLine[]> = {
   /** Never shown — the pal hides while the user is active. */
@@ -186,8 +181,7 @@ export const replyFollowUps: Record<string, PalLine> = {
 };
 
 /**
- * A short affirmation the pal says when the user returns from idle —
- * i.e. the state transitions from idle → active.
+ * A short affirmation the pal says when the user returns from idle.
  */
 export const returnGreetings: PalLine[] = [
   { text: "you're back! let's make something happen ⚡", mood: "excited" },
