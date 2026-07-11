@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { CheckCircle2, Circle, Clock, Flame, Zap } from "lucide-react";
-import { motion } from "framer-motion";
+import { CheckCircle2, Circle, Clock, Flame, Timer, ListTodo, Zap } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 import { FocusPal } from "@/components/FocusPal";
+import { PomodoroTimer } from "@/components/PomodoroTimer";
 import { useIdleDetector } from "@/hooks/useIdleDetector";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,8 @@ import { mockTasks } from "@/data/mock-tasks";
 import type { Task } from "@/types";
 
 const DEV_MODE = true;
+
+// ── Task card ─────────────────────────────────────────────────────────────────
 
 const PRIORITY_STYLES: Record<Task["priority"], string> = {
   urgent: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
@@ -43,7 +46,6 @@ function TaskCard({ task, onToggle }: { task: Task; onToggle: (id: string) => vo
       >
         {done ? <CheckCircle2 className="size-5 text-green-500" /> : <Circle className="size-5" />}
       </button>
-
       <div className="min-w-0 flex-1">
         <p className={cn("text-sm font-medium leading-snug", done && "line-through text-muted-foreground")}>
           {task.title}
@@ -68,23 +70,18 @@ function TaskCard({ task, onToggle }: { task: Task; onToggle: (id: string) => vo
   );
 }
 
+// ── Dev idle pill ─────────────────────────────────────────────────────────────
+
 function IdleStatusPill() {
   const { idleState, idleMs, resetIdle } = useIdleDetector();
-
   const LABEL: Record<typeof idleState, string> = {
-    active:      "● active",
-    "idle-soon": "◑ idle soon",
-    idle:        "○ idle",
-    "long-idle": "◌ long idle",
+    active: "● active", "idle-soon": "◑ idle soon",
+    idle: "○ idle", "long-idle": "◌ long idle",
   };
-
   const COLORS: Record<typeof idleState, string> = {
-    active:      "bg-green-100 text-green-700",
-    "idle-soon": "bg-amber-100 text-amber-700",
-    idle:        "bg-fuego-100 text-fuego-700",
-    "long-idle": "bg-red-100 text-red-700",
+    active: "bg-green-100 text-green-700", "idle-soon": "bg-amber-100 text-amber-700",
+    idle: "bg-fuego-100 text-fuego-700", "long-idle": "bg-red-100 text-red-700",
   };
-
   return (
     <div className="flex items-center gap-2">
       <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums", COLORS[idleState])}>
@@ -95,8 +92,21 @@ function IdleStatusPill() {
   );
 }
 
+// ── Tab definition ────────────────────────────────────────────────────────────
+
+type Tab = "tasks" | "pomodoro";
+
+const TABS: { id: Tab; label: string; Icon: typeof ListTodo }[] = [
+  { id: "tasks",    label: "Tasks",    Icon: ListTodo },
+  { id: "pomodoro", label: "Pomodoro", Icon: Timer },
+];
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
 export default function App() {
+  const [activeTab, setActiveTab] = useState<Tab>("tasks");
   const [tasks, setTasks] = useState<Task[]>(mockTasks);
+  const [pomodoroCompleted, setPomodoroCompleted] = useState(0);
 
   function toggleTask(id: string) {
     setTasks((prev) =>
@@ -111,6 +121,8 @@ export default function App() {
 
   return (
     <div className="flex h-dvh flex-col bg-background text-foreground">
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <header className="shrink-0 border-b border-border/60 bg-card px-4 py-3 sm:px-6">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -126,41 +138,118 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        <div className="mx-auto max-w-2xl space-y-6">
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Up next</h2>
-              <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                {activeTasks.length} tasks
-              </span>
-            </div>
-            <div className="space-y-2">
-              {activeTasks.map((task) => <TaskCard key={task.id} task={task} onToggle={toggleTask} />)}
-            </div>
-          </section>
+      {/* ── Tabs ────────────────────────────────────────────────────────── */}
+      <div className="shrink-0 border-b border-border/60 bg-card">
+        <div className="mx-auto flex max-w-2xl">
+          {TABS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={cn(
+                "relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                activeTab === id
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              aria-selected={activeTab === id}
+              role="tab"
+            >
+              <Icon className="size-3.5" />
+              {label}
+              {/* Badge: session count on Pomodoro tab */}
+              {id === "pomodoro" && pomodoroCompleted > 0 && (
+                <span className="ml-0.5 flex size-4 items-center justify-center rounded-full bg-fuego-500 text-[10px] font-bold text-white">
+                  {pomodoroCompleted}
+                </span>
+              )}
+              {/* Active underline */}
+              {activeTab === id && (
+                <motion.div
+                  layoutId="tab-underline"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-fuego-500"
+                  transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
 
-          {doneTasks.length > 0 && (
-            <section>
-              <div className="mb-3 flex items-center gap-2">
-                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Done</h2>
-                <CheckCircle2 className="size-3.5 text-green-500" />
+      {/* ── Tab panels ──────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-y-auto" role="tabpanel">
+        <AnimatePresence mode="wait">
+          {activeTab === "tasks" && (
+            <motion.div
+              key="tasks"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.15 }}
+              className="px-4 py-6 sm:px-6"
+            >
+              <div className="mx-auto max-w-2xl space-y-6">
+                <section>
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Up next
+                    </h2>
+                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {activeTasks.length} tasks
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {activeTasks.map((task) => (
+                      <TaskCard key={task.id} task={task} onToggle={toggleTask} />
+                    ))}
+                  </div>
+                </section>
+
+                {doneTasks.length > 0 && (
+                  <section>
+                    <div className="mb-3 flex items-center gap-2">
+                      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Done
+                      </h2>
+                      <CheckCircle2 className="size-3.5 text-green-500" />
+                    </div>
+                    <div className="space-y-2">
+                      {doneTasks.map((task) => (
+                        <TaskCard key={task.id} task={task} onToggle={toggleTask} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+                <div className="h-24" />
               </div>
-              <div className="space-y-2">
-                {doneTasks.map((task) => <TaskCard key={task.id} task={task} onToggle={toggleTask} />)}
-              </div>
-            </section>
+            </motion.div>
           )}
 
-          <div className="h-24" />
-        </div>
+          {activeTab === "pomodoro" && (
+            <motion.div
+              key="pomodoro"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.15 }}
+              className="flex min-h-full items-start justify-center px-4 py-10 sm:px-6"
+            >
+              <div className="w-full max-w-xs">
+                <PomodoroTimer
+                  onSessionComplete={() => setPomodoroCompleted((n) => n + 1)}
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
+      {/* ── Dev hint ────────────────────────────────────────────────────── */}
       {DEV_MODE && (
         <div className="shrink-0 border-t border-border/40 bg-secondary/40 px-4 py-2">
           <p className="mx-auto flex max-w-2xl items-center gap-1.5 text-[11px] text-muted-foreground">
             <Clock className="size-3 shrink-0" />
-            <span>Dev mode — thresholds: idle-soon&nbsp;45s · idle&nbsp;2min · long-idle&nbsp;5min.</span>
+            <span>Dev mode — idle-soon 45s · idle 2min · long-idle 5min</span>
           </p>
         </div>
       )}
